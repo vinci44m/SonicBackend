@@ -7,18 +7,18 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\PostController;
 use App\Http\Controllers\StreamController;
 
-// --- Video Routen ---
-Route::get('/videos', [VideoController::class, 'index']);
-Route::post('/videos', [VideoController::class, 'store']);
-Route::post('/videos/{id}/comments', [VideoController::class, 'addComment']); // Für Video-Kommentare
-
-// --- Diskussions/Foren Routen ---
-Route::get('/posts', [PostController::class, 'index']);
-Route::post('/posts', [PostController::class, 'store']);
-
-// --- Live-Stream Routen ---
-Route::get('/streams', [StreamController::class, 'index']);
-
-// --- Authentifizierung ---
+// --- Authentifizierung (öffentlich) ---
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
+
+// --- Öffentliches Lesen ---
+Route::get('/videos', [VideoController::class, 'index']);
+Route::get('/posts', [PostController::class, 'index']);
+Route::get('/streams', [StreamController::class, 'index']);
+
+// --- Geschützt: nur eingeloggte Nutzer ---
+Route::middleware('auth:sanctum')->group(function () {
+    Route::post('/videos', [VideoController::class, 'store']);
+    Route::post('/videos/{id}/comments', [VideoController::class, 'addComment']);
+    Route::post('/posts', [PostController::class, 'store']);
+});
