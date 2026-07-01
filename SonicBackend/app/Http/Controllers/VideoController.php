@@ -26,7 +26,10 @@ class VideoController extends Controller
         $path = $request->file('video')->store('videos', 'public');
 
         // 3. Datenbank-Eintrag erstellen
+        // NEU: user_id wird jetzt gesetzt (der Upload-Route ist durch
+        // auth:sanctum geschützt, request()->user() ist also immer gesetzt).
         $video = Video::create([
+            'user_id' => $request->user()->id,
             'title' => $request->title,
             'thumbnail_path' => '/storage/' . $path, // Pfad für das Vorschaubild (hier gleich Video-Pfad)
             'file_path' => '/storage/' . $path,      // Pfad zum Video
@@ -34,6 +37,7 @@ class VideoController extends Controller
 
         return response()->json(['message' => 'Video erfolgreich hochgeladen!', 'video' => $video], 201);
     }
+
     // Fügt einem Video einen Kommentar hinzu
     public function addComment(Request $request, $id)
     {
