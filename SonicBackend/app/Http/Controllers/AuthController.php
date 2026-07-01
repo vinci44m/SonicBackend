@@ -41,4 +41,36 @@ class AuthController extends Controller
 
         return response()->json(['message' => 'Konto erfolgreich erstellt!'], 201);
     }
+
+    // NEU: wird von routes/api.php unter /user/me erwartet, hat aber
+    // bisher gefehlt -> jeder Aufruf von /user/me endete in einem 500er.
+    public function me(Request $request)
+    {
+        return response()->json($request->user());
+    }
+
+public function updateProfile(Request $request)
+    {
+        // 1. Validieren, ob die Daten vom Frontend okay sind
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'semester' => 'nullable|string|max:50',
+        ]);
+
+        // 2. Den aktuell eingeloggten User holen
+        $user = $request->user();
+
+        // 3. Daten in der Datenbank aktualisieren
+        $user->update([
+            'name' => $request->name,
+            'semester' => $request->semester,
+        ]);
+
+        // 4. Erfolgsmeldung ans Frontend schicken
+        return response()->json([
+            'message' => 'Profil erfolgreich aktualisiert!',
+            'user' => $user
+        ], 200);
+    }
+
 }
