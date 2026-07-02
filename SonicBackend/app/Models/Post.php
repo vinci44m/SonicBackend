@@ -1,5 +1,4 @@
 <?php
-
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -17,9 +16,19 @@ class Post extends Model
         'votes',
     ];
 
+    // 1. Definiere, dass dieses Feld immer mitgeliefert werden soll
+    protected $appends = ['user_vote'];
+
     protected $casts = [
         'tags' => 'array',
     ];
+
+    // 2. Erstelle eine Methode, die den Wert ausliest
+    public function getUserVoteAttribute()
+    {
+        // Wir holen den Wert, den wir im Controller mit setAttribute gesetzt haben
+        return $this->getAttribute('user_vote') ?? 0;
+    }
 
     public function user()
     {

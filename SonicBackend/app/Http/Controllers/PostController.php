@@ -29,29 +29,47 @@ class PostController extends Controller
     }
 
     // Auch die index()-Methode muss jetzt echte Daten holen:
-    public function index()
+  public function index()
     {
-        return \App\Models\Post::with('user')->latest()->get();
+        $userId = auth()->id();
+        
+        // Hole alle Posts inklusive der Information, was der User gevotet hat
+        $posts = \App\Models\Post::withCount('comments')
+            ->get()
+            ->map(function ($post) use ($userId) {
+                // Prüfen, ob der User für diesen Post einen Vote hat
+                $userVote = \App\Models\Vote::where('post_id', $post->id)
+                    ->where('user_id', $userId)
+                    ->value('value'); // Gibt 1, -1 oder null zurück
+                
+                $post->user_vote = $userVote ?? 0;
+                return $post;
+            });
+
+        return response()->json($posts);
     }
 
     public function vote(Request $request, $postId)
     {
-        $value = $request->input('value'); // 1 oder -1
-        $user = $request->user();
+        $val = $request->input('value'); // 1, -1 oder 0
+        $userId = auth()->id();
 
-        // 1. Vote finden oder neu erstellen (Update-or-Create)
-        \App\Models\Vote::updateOrCreate(
-            ['user_id' => $user->id, 'post_id' => $postId],
-            ['value' => $value]
-        );
+        // 1. Wenn val 0 ist, wollen wir den Vote entfernen (Toggle aus)
+        if ($val == 0) {
+            \App\Models\Vote::where('user_id', $userId)
+                ->where('post_id', $postId)
+                ->delete();
+        } else {
+            // 2. Sonst (1 oder -1) erstellen oder aktualisieren
+            \App\Models\Vote::updateOrCreate(
+                ['user_id' => $userId, 'post_id' => $postId],
+                ['value' => $val]
+            );
+        }
 
-        // 2. Votes neu berechnen (Summe aller Values für diesen Post)
+        // 3. Ergebnis zurückgeben
         $totalVotes = \App\Models\Vote::where('post_id', $postId)->sum('value');
-
-        // 3. Post aktualisieren
-        $post = \App\Models\Post::find($postId);
-        $post->update(['votes' => $totalVotes]);
-
+        
         return response()->json(['votes' => $totalVotes]);
     }
 }
