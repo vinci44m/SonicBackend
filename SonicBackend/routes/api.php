@@ -7,29 +7,28 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\PostController;
 use App\Http\Controllers\StreamController;
 use App\Http\Controllers\CommentController;
+use App\Http\Controllers\UserController; // Den Controller hier oben importieren
 
 // --- Authentifizierung (Öffentlich) ---
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 
-// --- Öffentlich abrufbar (Auch ohne Login sichtbar) ---
+// --- Öffentlich abrufbar ---
 Route::get('/videos', [VideoController::class, 'index']);
 Route::get('/posts', [PostController::class, 'index']);
 Route::get('/streams', [StreamController::class, 'index']);
-Route::get('/comments', [CommentController::class, 'index']); // Kommentare lesen darf jeder
+Route::get('/comments', [CommentController::class, 'index']);
 
-// --- Geschützte Routen (Nur für eingeloggte Nutzer via Sanctum) ---
+// --- Geschützte Routen (Nur für eingeloggte Nutzer) ---
 Route::middleware('auth:sanctum')->group(function () {
-    // Benutzerprofil & eigene Uploads für "Mein Account"
+    // Benutzerprofil
     Route::get('/user/me', [AuthController::class, 'me']);
-    Route::put('/user/profile', [AuthController::class, 'updateProfile']);
+    
+    // WICHTIG: Hier ist die aktualisierte Route für das Profil-Update
+    Route::put('/user/profile', [UserController::class, 'update']);
 
     // Neue Inhalte erstellen
     Route::post('/videos', [VideoController::class, 'store']);
-    Route::post('/posts', [PostController::class, 'store']); // Neue Diskussionen im Backend speichern
-
-    // Neuen Kommentar schreiben (für Video oder Post)
+    Route::post('/posts', [PostController::class, 'store']);
     Route::post('/comments', [CommentController::class, 'store']);
-
-    Route::put('/user/profile', [AuthController::class, 'updateProfile']);
 });

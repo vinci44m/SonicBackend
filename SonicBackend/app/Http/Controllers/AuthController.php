@@ -72,5 +72,15 @@ public function updateProfile(Request $request)
             'user' => $user
         ], 200);
     }
+    public function update(Request $request)
+    {
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'semester' => 'required|string',
+        ]);
 
+        $request->user()->update($validated);
+
+        return response()->json(['message' => 'Profil aktualisiert!']);
+    }
 }
