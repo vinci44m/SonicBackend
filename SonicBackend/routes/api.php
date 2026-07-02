@@ -23,12 +23,13 @@ Route::get('/comments', [CommentController::class, 'index']);
 Route::middleware('auth:sanctum')->group(function () {
     // Benutzerprofil
     Route::get('/user/me', [AuthController::class, 'me']);
-    
-    // WICHTIG: Hier ist die aktualisierte Route für das Profil-Update
     Route::put('/user/profile', [UserController::class, 'update']);
 
     // Neue Inhalte erstellen
     Route::post('/videos', [VideoController::class, 'store']);
     Route::post('/posts', [PostController::class, 'store']);
     Route::post('/comments', [CommentController::class, 'store']);
+    
+    // HIER gehört die Vote-Route rein, damit sie geschützt ist:
+    Route::post('/posts/{post}/vote', [PostController::class, 'vote']);
 });
