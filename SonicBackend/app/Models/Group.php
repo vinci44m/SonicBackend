@@ -32,4 +32,9 @@ class Group extends Model
     {
         return $this->hasMany(Post::class);
     }
+
+    public function discussions()
+    {
+        return $this->hasMany(Discussion::class);
+    }
 }
