@@ -10,9 +10,10 @@ return new class extends Migration
     {
         Schema::create('comments', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('video_id')->constrained()->cascadeOnDelete();
+            // Hier muss 'post_id' stehen, damit der Controller es zuordnen kann
+            $table->foreignId('post_id')->constrained()->cascadeOnDelete();
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
-            $table->text('text');
+            $table->text('content');
             $table->timestamps();
         });
     }

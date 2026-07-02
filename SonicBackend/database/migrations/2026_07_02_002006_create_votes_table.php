@@ -11,15 +11,18 @@ return new class extends Migration
      */
     public function up()
     {
-        Schema::create('posts', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('user_id')->constrained(); // Wichtig für die Verknüpfung
-            $table->string('title');
-            $table->text('content');
-            $table->json('tags')->nullable(); // oder ->string('tags')
-            $table->integer('votes')->default(0);
-            $table->timestamps();
-        });
+        // Wir prüfen, ob 'posts' schon existiert, um den Absturz zu verhindern
+        if (!Schema::hasTable('posts')) {
+            Schema::create('posts', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('user_id')->constrained();
+                $table->string('title');
+                $table->text('content');
+                $table->json('tags')->nullable();
+                $table->integer('votes')->default(0);
+                $table->timestamps();
+            });
+        }
     }
 
     /**
@@ -27,6 +30,7 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('votes');
+        // Korrektur: Wir löschen jetzt 'posts', da wir es oben erstellen
+        Schema::dropIfExists('posts');
     }
 };

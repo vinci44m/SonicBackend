@@ -1,7 +1,8 @@
 <?php
-
 namespace App\Http\Controllers;
 
+use App\Models\Group;
+use App\Models\Post; // Sicherstellen, dass Post importiert ist
 use Illuminate\Http\Request;
 
 class PostController extends Controller
@@ -66,5 +67,19 @@ class PostController extends Controller
         $totalVotes = \App\Models\Vote::where('post_id', $postId)->sum('value');
         
         return response()->json(['votes' => $totalVotes]);
+    }
+
+    public function destroy($id)
+    {
+        $post = Post::findOrFail($id);
+        $group = Group::findOrFail($post->group_id);
+
+        // Darf löschen: Der Autor des Posts ODER der Ersteller der Gruppe
+        if (auth()->id() === $post->user_id || auth()->id() === $group->user_id) {
+            $post->delete();
+            return response()->json(['message' => 'Post gelöscht']);
+        }
+
+        return response()->json(['message' => 'Nicht erlaubt'], 403);
     }
 }

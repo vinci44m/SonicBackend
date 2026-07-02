@@ -12,7 +12,10 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->string('semester')->nullable()->after('email');
+            // Prüfung: Nur hinzufügen, wenn die Spalte noch nicht existiert
+            if (!Schema::hasColumn('users', 'semester')) {
+                $table->string('semester')->nullable()->after('email');
+            }
         });
     }
 
@@ -22,7 +25,10 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            //
+            // Gute Praxis: Wenn wir rollen, dann löschen wir die Spalte auch wieder
+            if (Schema::hasColumn('users', 'semester')) {
+                $table->dropColumn('semester');
+            }
         });
     }
 };

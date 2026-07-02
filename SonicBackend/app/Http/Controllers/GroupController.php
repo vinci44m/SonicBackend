@@ -66,16 +66,20 @@ class GroupController extends Controller
     /**
      * Gruppe auflösen (nur Admin/Gründer).
      */
-    public function destroy(Request $request, $id)
+    public function destroy($id)
     {
+        // Finde die Gruppe
         $group = Group::findOrFail($id);
 
-        if ($group->created_by !== $request->user()->id) {
-            return response()->json(['error' => 'Nur der Gruppenadmin darf diese Gruppe auflösen.'], 403);
+        // Prüfe, ob der User der Ersteller ist (entsprechend deiner index() Logik heißt das Feld 'created_by')
+        if (auth()->id() !== $group->created_by) {
+            return response()->json(['message' => 'Du hast keine Berechtigung, diese Gruppe zu löschen.'], 403);
         }
 
+        // Gruppe löschen
         $group->delete();
-        return response()->json(['message' => 'Gruppe wurde aufgelöst.']);
+        
+        return response()->json(['message' => 'Gruppe erfolgreich gelöscht']);
     }
 
     /**

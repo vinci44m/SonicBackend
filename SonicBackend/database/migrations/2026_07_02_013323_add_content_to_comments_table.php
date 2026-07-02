@@ -9,14 +9,20 @@ return new class extends Migration
     public function up()
     {
         Schema::table('comments', function (Blueprint $table) {
-            $table->text('content')->nullable(); // 'nullable' verhindert Fehler bei bestehenden Datensätzen
+            // Nur hinzufügen, wenn die Spalte noch nicht existiert
+            if (!Schema::hasColumn('comments', 'content')) {
+                $table->text('content')->nullable();
+            }
         });
     }
 
     public function down()
     {
         Schema::table('comments', function (Blueprint $table) {
-            $table->dropColumn('content');
+            // Nur löschen, wenn die Spalte existiert
+            if (Schema::hasColumn('comments', 'content')) {
+                $table->dropColumn('content');
+            }
         });
     }
 };
