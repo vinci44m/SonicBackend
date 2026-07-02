@@ -11,10 +11,10 @@ class Comment extends Model
 
     // Diese Felder dürfen per Massen-Zuweisung (Mass Assignment) gespeichert werden
     protected $fillable = [
-        'user_id',
-        'commentable_type',
-        'commentable_id',
-        'content',
+        'user_id', 
+        'content', 
+        'commentable_id', 
+        'commentable_type'
     ];
 
     /**

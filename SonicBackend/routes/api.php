@@ -7,7 +7,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\PostController;
 use App\Http\Controllers\StreamController;
 use App\Http\Controllers\CommentController;
-use App\Http\Controllers\UserController; // Den Controller hier oben importieren
+use App\Http\Controllers\UserController;
 
 // --- Authentifizierung (Öffentlich) ---
 Route::post('/register', [AuthController::class, 'register']);
@@ -17,7 +17,9 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::get('/videos', [VideoController::class, 'index']);
 Route::get('/posts', [PostController::class, 'index']);
 Route::get('/streams', [StreamController::class, 'index']);
-Route::get('/comments', [CommentController::class, 'index']);
+
+// HIER: Die Kommentare sind jetzt an den Post gebunden
+Route::get('/posts/{postId}/comments', [CommentController::class, 'index']);
 
 // --- Geschützte Routen (Nur für eingeloggte Nutzer) ---
 Route::middleware('auth:sanctum')->group(function () {
@@ -28,8 +30,10 @@ Route::middleware('auth:sanctum')->group(function () {
     // Neue Inhalte erstellen
     Route::post('/videos', [VideoController::class, 'store']);
     Route::post('/posts', [PostController::class, 'store']);
-    Route::post('/comments', [CommentController::class, 'store']);
     
-    // HIER gehört die Vote-Route rein, damit sie geschützt ist:
+    // HIER: Der Kommentar-Speicher-Prozess braucht den Post als Referenz
+    Route::post('/posts/{postId}/comments', [CommentController::class, 'store']);
+    
+    // Voting-Route
     Route::post('/posts/{post}/vote', [PostController::class, 'vote']);
 });
