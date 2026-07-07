@@ -48,25 +48,37 @@ class PostController extends Controller
         return response()->json($data);
     }
 
-    public function vote(Request $request, $postId)
+    public function vote(Request $request, Post $post)
     {
-        $val = $request->input('value');
-        $userId = auth()->id();
+        $request->validate([
+            'vote_type' => 'required|in:up,down', // 'up' oder 'down'
+        ]);
 
-        if ($val == 0) {
-            \App\Models\Vote::where('user_id', $userId)
-                ->where('post_id', $postId)
-                ->delete();
+        $user = auth()->user();
+
+        // Suche nach existierendem Vote dieses Users für diesen Post
+        $vote = \App\Models\Vote::where('user_id', $user->id)
+                                ->where('post_id', $post->id)
+                                ->first();
+
+        if ($vote) {
+            // Wenn User den gleichen Vote nochmal drückt -> löschen (Vote entfernen)
+            if ($vote->type === $request->vote_type) {
+                $vote->delete();
+            } else {
+                // Anderen Typ wählen (z.B. von Up zu Down wechseln)
+                $vote->update(['type' => $request->vote_type]);
+            }
         } else {
-            \App\Models\Vote::updateOrCreate(
-                ['user_id' => $userId, 'post_id' => $postId],
-                ['value' => $val]
-            );
+            // Neuen Vote erstellen
+            \App\Models\Vote::create([
+                'user_id' => $user->id,
+                'post_id' => $post->id,
+                'type'    => $request->vote_type,
+            ]);
         }
 
-        $totalVotes = \App\Models\Vote::where('post_id', $postId)->sum('value');
-        
-        return response()->json(['votes' => $totalVotes]);
+        return response()->json(['message' => 'Vote gespeichert']);
     }
 
     public function destroy($id)

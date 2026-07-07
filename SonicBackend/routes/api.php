@@ -40,4 +40,5 @@ Route::middleware('auth:sanctum')->group(function () {
     // DISKUSSION ROUTE
     // Middleware ist hier nicht mehr nötig, da sie vom Gruppen-Block oben "geerbt" wird
     Route::post('/groups/{groupId}/discussions', [DiscussionController::class, 'store']);
+    Route::get('/groups/{groupId}/discussions', [DiscussionController::class, 'index']);
 });
