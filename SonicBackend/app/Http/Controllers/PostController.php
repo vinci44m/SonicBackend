@@ -48,38 +48,37 @@ class PostController extends Controller
         return response()->json($data);
     }
 
-    public function vote(Request $request, Post $post)
-    {
-        $request->validate([
-            'vote_type' => 'required|in:up,down', // 'up' oder 'down'
-        ]);
+public function vote(Request $request, Post $post)
+{
+    $request->validate([
+        'vote_type' => 'required|in:up,down',
+    ]);
 
-        $user = auth()->user();
+    $user = auth()->user();
 
-        // Suche nach existierendem Vote dieses Users für diesen Post
-        $vote = \App\Models\Vote::where('user_id', $user->id)
-                                ->where('post_id', $post->id)
-                                ->first();
+    $vote = \App\Models\Vote::where('user_id', $user->id)
+        ->where('post_id', $post->id)
+        ->first();
 
-        if ($vote) {
-            // Wenn User den gleichen Vote nochmal drückt -> löschen (Vote entfernen)
-            if ($vote->type === $request->vote_type) {
-                $vote->delete();
-            } else {
-                // Anderen Typ wählen (z.B. von Up zu Down wechseln)
-                $vote->update(['type' => $request->vote_type]);
-            }
+    if ($vote) {
+        if ($vote->type === $request->vote_type) {
+            $vote->delete();
         } else {
-            // Neuen Vote erstellen
-            \App\Models\Vote::create([
-                'user_id' => $user->id,
-                'post_id' => $post->id,
-                'type'    => $request->vote_type,
-            ]);
+            $vote->update(['type' => $request->vote_type]);
         }
-
-        return response()->json(['message' => 'Vote gespeichert']);
+    } else {
+        \App\Models\Vote::create([
+            'user_id' => $user->id,
+            'post_id' => $post->id,
+            'type'    => $request->vote_type,
+        ]);
     }
+
+    // NEU: aktuelle Stimmenzahl zurückgeben
+    return response()->json([
+        'votes' => $post->votes_count,
+    ]);
+}
 
     public function destroy($id)
     {

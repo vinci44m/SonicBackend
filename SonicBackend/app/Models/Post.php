@@ -14,32 +14,22 @@ class Post extends Model
         'title',
         'content',
         'tags',
-        // 'votes' entfernen wir hier, da wir es dynamisch berechnen
     ];
 
     protected $casts = [
         'tags' => 'array',
     ];
 
-    public function user()
-    {
-        return $this->belongsTo(User::class);
-    }
+    // NEU: sorgt dafür, dass votes_count im JSON mit ausgegeben wird
+    protected $appends = ['votes_count'];
 
-    public function comments()
-    {
-        return $this->hasMany(Comment::class);
-    }
+    public function user() { return $this->belongsTo(User::class); }
+    public function comments() { return $this->hasMany(Comment::class); }
+    public function votes() { return $this->hasMany(Vote::class); }
 
-    public function votes()
-    {
-        return $this->hasMany(Vote::class);
-    }
-
-    // Praktisches Extra: Du kannst jetzt einfach $post->votes_count aufrufen
     public function getVotesCountAttribute()
     {
-        // Beispiel: Up-Votes minus Down-Votes
-        return $this->votes()->where('type', 'up')->count() - $this->votes()->where('type', 'down')->count();
+        return $this->votes()->where('type', 'up')->count()
+             - $this->votes()->where('type', 'down')->count();
     }
 }
