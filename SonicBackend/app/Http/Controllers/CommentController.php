@@ -22,10 +22,11 @@ class CommentController extends Controller
             ->get()
             ->map(function ($comment) {
                 return [
-                    'id'      => $comment->id,
-                    'author'  => $comment->user->name ?? 'Anonym',
-                    'content' => $comment->content,
-                    'date'    => $comment->created_at->diffForHumans(),
+                    'id'        => $comment->id,
+                    'author'    => $comment->user->name ?? 'Anonym',
+                    'content'   => $comment->content,
+                    'parent_id' => $comment->parent_id,
+                    'date'      => $comment->created_at->diffForHumans(),
                 ];
             });
 
@@ -35,26 +36,29 @@ class CommentController extends Controller
     /**
      * Neuen Kommentar zu einem Post speichern (nur eingeloggte Nutzer).
      * Aufruf: POST /api/posts/{id}/comments
-     * Body: { "content": "Mein Kommentar..." }
+     * Body: { "content": "Mein Kommentar...", "parent_id": null }
      */
     public function store(Request $request, $postId)
     {
         $request->validate([
-            'content' => 'required|string|max:1000',
+            'content'   => 'required|string|max:1000',
+            'parent_id' => 'nullable|exists:comments,id',
         ]);
 
         $post = Post::findOrFail($postId);
 
         $comment = $post->comments()->create([
-            'user_id' => $request->user()->id,
-            'content' => $request->content,
+            'user_id'   => $request->user()->id,
+            'content'   => $request->content,
+            'parent_id' => $request->parent_id,
         ]);
 
         return response()->json([
-            'id'      => $comment->id,
-            'author'  => $request->user()->name,
-            'content' => $comment->content,
-            'date'    => 'Gerade eben',
+            'id'        => $comment->id,
+            'author'    => $request->user()->name,
+            'content'   => $comment->content,
+            'parent_id' => $comment->parent_id,
+            'date'      => 'Gerade eben',
         ], 201);
     }
 }
