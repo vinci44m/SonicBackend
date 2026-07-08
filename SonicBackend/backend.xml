@@ -46,14 +46,21 @@ app/
       AuthController.php
       CommentController.php
       Controller.php
+      DiscussionController.php
+      GroupController.php
       PostController.php
       StreamController.php
+      UserController.php
       VideoController.php
   Models/
     Comment.php
+    Discussion.php
+    Group.php
+    GroupMember.php
     Post.php
     User.php
     Video.php
+    Vote.php
   Providers/
     AppServiceProvider.php
 bootstrap/
@@ -83,9 +90,20 @@ database/
     0001_01_01_000002_create_jobs_table.php
     2026_06_26_193323_create_videos_table.php
     2026_06_26_203337_create_personal_access_tokens_table.php
-    2026_06_30_100000_add_user_id_to_videos_table.php
-    2026_06_30_100001_create_posts_table.php
-    2026_06_30_100002_create_comments_table.php
+    2026_06_30_000001_add_user_id_to_videos_table.php
+    2026_06_30_000002_create_comments_table.php
+    2026_06_30_000003_create_posts_table.php
+    2026_07_01_100000_create_groups_table.php
+    2026_07_01_100001_create_group_members_table.php
+    2026_07_01_100002_add_group_id_to_posts_table.php
+    2026_07_01_223348_add_semester_to_users_table.php
+    2026_07_02_002006_create_votes_table.php
+    2026_07_02_013323_add_content_to_comments_table.php
+    2026_07_02_013643_add_polymorphic_columns_to_comments_table.php
+    2026_07_02_014426_make_video_id_nullable_in_comments_table.php
+    2026_07_02_015100_make_old_comment_columns_nullable.php
+    2026_07_02_044054_add_user_id_to_groups_table.php
+    2026_07_02_063446_create_discussions_table.php
   seeders/
     DatabaseSeeder.php
   .gitignore
@@ -192,11 +210,112 @@ class AuthController extends Controller
 
         return response()->json(['message' => 'Konto erfolgreich erstellt!'], 201);
     }
+
+    // NEU: wird von routes/api.php unter /user/me erwartet, hat aber
+    // bisher gefehlt -> jeder Aufruf von /user/me endete in einem 500er.
+    public function me(Request $request)
+    {
+        return response()->json($request->user());
+    }
+
+public function updateProfile(Request $request)
+    {
+        // 1. Validieren, ob die Daten vom Frontend okay sind
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'semester' => 'nullable|string|max:50',
+        ]);
+
+        // 2. Den aktuell eingeloggten User holen
+        $user = $request->user();
+
+        // 3. Daten in der Datenbank aktualisieren
+        $user->update([
+            'name' => $request->name,
+            'semester' => $request->semester,
+        ]);
+
+        // 4. Erfolgsmeldung ans Frontend schicken
+        return response()->json([
+            'message' => 'Profil erfolgreich aktualisiert!',
+            'user' => $user
+        ], 200);
+    }
+    public function update(Request $request)
+    {
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'semester' => 'required|string',
+        ]);
+
+        $request->user()->update($validated);
+
+        return response()->json(['message' => 'Profil aktualisiert!']);
+    }
 }
 </file>
 
 <file path="app/Http/Controllers/CommentController.php">
+<?php
 
+namespace App\Http\Controllers;
+
+use App\Models\Comment;
+use App\Models\Post;
+use Illuminate\Http\Request;
+
+class CommentController extends Controller
+{
+    /**
+     * Alle Kommentare für einen bestimmten Post laden.
+     * Aufruf: GET /api/posts/{id}/comments
+     */
+    public function index($postId)
+    {
+        $post = Post::findOrFail($postId);
+
+        $comments = $post->comments()
+            ->with('user')
+            ->latest()
+            ->get()
+            ->map(function ($comment) {
+                return [
+                    'id'      => $comment->id,
+                    'author'  => $comment->user->name ?? 'Anonym',
+                    'content' => $comment->content,
+                    'date'    => $comment->created_at->diffForHumans(),
+                ];
+            });
+
+        return response()->json($comments);
+    }
+
+    /**
+     * Neuen Kommentar zu einem Post speichern (nur eingeloggte Nutzer).
+     * Aufruf: POST /api/posts/{id}/comments
+     * Body: { "content": "Mein Kommentar..." }
+     */
+    public function store(Request $request, $postId)
+    {
+        $request->validate([
+            'content' => 'required|string|max:1000',
+        ]);
+
+        $post = Post::findOrFail($postId);
+
+        $comment = $post->comments()->create([
+            'user_id' => $request->user()->id,
+            'content' => $request->content,
+        ]);
+
+        return response()->json([
+            'id'      => $comment->id,
+            'author'  => $request->user()->name,
+            'content' => $comment->content,
+            'date'    => 'Gerade eben',
+        ], 201);
+    }
+}
 </file>
 
 <file path="app/Http/Controllers/Controller.php">
@@ -210,50 +329,314 @@ abstract class Controller
 }
 </file>
 
-<file path="app/Http/Controllers/PostController.php">
+<file path="app/Http/Controllers/DiscussionController.php">
 <?php
 
 namespace App\Http\Controllers;
 
+use App\Models\Group;
+use App\Models\Discussion;
+use Illuminate\Http\Request;
+
+class DiscussionController extends Controller
+{
+    // Alle Diskussionen einer Gruppe anzeigen
+    public function index($groupId)
+    {
+        $group = Group::findOrFail($groupId);
+        // Wir laden die Diskussionen mit dem User (Autor)
+        return response()->json($group->discussions()->with('user')->latest()->get());
+    }
+
+    // Neue Diskussion erstellen
+    public function store(Request $request, $groupId)
+    {
+        $request->validate([
+            'title'   => 'required|string|max:255',
+            'content' => 'required|string',
+        ]);
+
+        $group = Group::findOrFail($groupId);
+        
+        $discussion = $group->discussions()->create([
+            'user_id' => auth()->id(),
+            'title'   => $request->title,
+            'content' => $request->content,
+        ]);
+
+        return response()->json($discussion, 201);
+    }
+}
+</file>
+
+<file path="app/Http/Controllers/GroupController.php">
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Group;
+use App\Models\Post;
+use Illuminate\Http\Request;
+
+class GroupController extends Controller
+{
+    /**
+     * Alle Gruppen laden (für eingeloggten Nutzer mit is_member / is_admin Status).
+     */
+    public function index(Request $request)
+    {
+        $userId = optional($request->user())->id;
+
+        $groups = Group::withCount('members')->get()->map(function ($group) use ($userId) {
+            $isMember = $userId ? $group->members()->where('user_id', $userId)->exists() : false;
+            $isAdmin  = $userId && $group->created_by === $userId;
+
+            return [
+                'id'          => $group->id,
+                'name'        => $group->name,
+                'description' => $group->description,
+                'memberCount' => $group->members_count,
+                'isMember'    => $isMember,
+                'isAdmin'     => $isAdmin,
+                'members'     => $group->members()->with('user')->get()->pluck('user.name'),
+            ];
+        });
+
+        return response()->json($groups);
+    }
+
+    /**
+     * Neue Gruppe gründen (nur eingeloggte Nutzer).
+     */
+    public function store(Request $request)
+    {
+        $request->validate([
+            'name'        => 'required|string|max:100',
+            'description' => 'nullable|string|max:500',
+        ]);
+
+        $group = Group::create([
+            'name'        => $request->name,
+            'description' => $request->description ?? '',
+            'created_by'  => $request->user()->id,
+        ]);
+
+        // Gründer direkt als Mitglied eintragen
+        $group->members()->create(['user_id' => $request->user()->id]);
+
+        return response()->json([
+            'id'          => $group->id,
+            'name'        => $group->name,
+            'description' => $group->description,
+            'memberCount' => 1,
+            'isMember'    => true,
+            'isAdmin'     => true,
+            'members'     => [$request->user()->name],
+        ], 201);
+    }
+
+    /**
+     * Gruppe auflösen (nur Admin/Gründer).
+     */
+    public function destroy($id)
+    {
+        // Finde die Gruppe
+        $group = Group::findOrFail($id);
+
+        // Prüfe, ob der User der Ersteller ist (entsprechend deiner index() Logik heißt das Feld 'created_by')
+        if (auth()->id() !== $group->created_by) {
+            return response()->json(['message' => 'Du hast keine Berechtigung, diese Gruppe zu löschen.'], 403);
+        }
+
+        // Gruppe löschen
+        $group->delete();
+        
+        return response()->json(['message' => 'Gruppe erfolgreich gelöscht']);
+    }
+
+    /**
+     * Einer Gruppe beitreten.
+     */
+    public function join(Request $request, $id)
+    {
+        $group = Group::findOrFail($id);
+        $userId = $request->user()->id;
+
+        // Verhindert doppelten Eintrag
+        if (!$group->members()->where('user_id', $userId)->exists()) {
+            $group->members()->create(['user_id' => $userId]);
+        }
+
+        return response()->json(['message' => 'Erfolgreich beigetreten.']);
+    }
+
+    /**
+     * Eine Gruppe verlassen.
+     */
+    public function leave(Request $request, $id)
+    {
+        $group = Group::findOrFail($id);
+        $group->members()->where('user_id', $request->user()->id)->delete();
+
+        return response()->json(['message' => 'Gruppe verlassen.']);
+    }
+
+    /**
+     * Alle Posts einer Gruppe laden.
+     */
+    public function posts($id)
+    {
+        $group = Group::findOrFail($id);
+
+        $posts = Post::where('group_id', $id)
+            ->with('user')
+            ->withCount('comments')
+            ->latest()
+            ->get()
+            ->map(function ($post) {
+                return [
+                    'id'       => $post->id,
+                    'title'    => $post->title,
+                    'content'  => $post->content,
+                    'author'   => $post->user->name ?? 'Unbekannt',
+                    'votes'    => $post->votes,
+                    'comments' => $post->comments_count,
+                    'date'     => $post->created_at->diffForHumans(),
+                ];
+            });
+
+        return response()->json($posts);
+    }
+
+    /**
+     * Neue Diskussion innerhalb einer Gruppe erstellen.
+     */
+    public function storePost(Request $request, $id)
+    {
+        $group = Group::findOrFail($id);
+
+        $request->validate([
+            'title'   => 'required|string|max:255',
+            'content' => 'nullable|string',
+        ]);
+
+        $post = Post::create([
+            'user_id'  => $request->user()->id,
+            'group_id' => $id,
+            'title'    => $request->title,
+            'content'  => $request->content ?? '',
+            'tags'     => [],
+            'votes'    => 0,
+        ]);
+
+        return response()->json([
+            'id'       => $post->id,
+            'title'    => $post->title,
+            'author'   => $request->user()->name,
+            'votes'    => 0,
+            'comments' => 0,
+            'date'     => 'Gerade eben',
+        ], 201);
+    }
+}
+</file>
+
+<file path="app/Http/Controllers/PostController.php">
+<?php
+namespace App\Http\Controllers;
+
+use App\Models\Group;
+use App\Models\Post; // Sicherstellen, dass Post importiert ist
 use Illuminate\Http\Request;
 
 class PostController extends Controller
 {
-    // Gibt Beiträge aus (aktuell als strukturierte Platzhalter, damit das Frontend nicht leer ist)
-    public function index()
-    {
-        return response()->json([
-            [
-                'id' => 1,
-                'title' => 'GTI Prüfungsvorbereitung - Wer lernt mit?',
-                'author' => 'Max Mustermann',
-                'tags' => ['Allgemein', 'Prüfungen'],
-                'votes' => 12,
-                'comments' => 5,
-                'date' => 'vor 2 Std.'
-            ],
-            [
-                'id' => 2,
-                'title' => 'Wie binde ich Axios richtig in Vue 3 ein?',
-                'author' => 'Laura Tech',
-                'tags' => ['JavaScript', 'Laravel'],
-                'votes' => 25,
-                'comments' => 14,
-                'date' => 'vor 1 Tag'
-            ]
-        ]);
-    }
-
-    // Speichert einen neuen Foren-Beitrag
     public function store(Request $request)
     {
-        $request->validate([
-            'title' => 'required|string',
+        $validated = $request->validate([
+            'title' => 'required|string|max:255',
             'content' => 'required|string',
+            'tags' => 'required|array',
         ]);
 
-        // Hier wird der Post später in der Datenbank gespeichert
-        return response()->json(['message' => 'Beitrag erfolgreich erstellt!'], 201);
+        $post = $request->user()->posts()->create([
+            'title'   => $validated['title'],
+            'content' => $validated['content'],
+            'tags'    => $validated['tags'],
+            'votes'   => 0, 
+        ]);
+
+        return response()->json($post, 201);
+    }
+
+    public function index()
+    {
+        $userId = auth()->id();
+        
+        // Hole alle Posts inklusive der Kommentaranzahl
+        $posts = \App\Models\Post::withCount('comments')->get();
+
+        // Wandle die Collection in ein Array um und füge user_vote manuell hinzu
+        $data = $posts->map(function ($post) use ($userId) {
+            $item = $post->toArray();
+            
+            // Suche den Vote des Users
+            $userVote = \App\Models\Vote::where('post_id', $post->id)
+                ->where('user_id', $userId)
+                ->value('value'); 
+            
+            $item['user_vote'] = $userVote ?? 0;
+            return $item;
+        });
+
+        return response()->json($data);
+    }
+
+    public function vote(Request $request, Post $post)
+    {
+        $request->validate([
+            'vote_type' => 'required|in:up,down', // 'up' oder 'down'
+        ]);
+
+        $user = auth()->user();
+
+        // Suche nach existierendem Vote dieses Users für diesen Post
+        $vote = \App\Models\Vote::where('user_id', $user->id)
+                                ->where('post_id', $post->id)
+                                ->first();
+
+        if ($vote) {
+            // Wenn User den gleichen Vote nochmal drückt -> löschen (Vote entfernen)
+            if ($vote->type === $request->vote_type) {
+                $vote->delete();
+            } else {
+                // Anderen Typ wählen (z.B. von Up zu Down wechseln)
+                $vote->update(['type' => $request->vote_type]);
+            }
+        } else {
+            // Neuen Vote erstellen
+            \App\Models\Vote::create([
+                'user_id' => $user->id,
+                'post_id' => $post->id,
+                'type'    => $request->vote_type,
+            ]);
+        }
+
+        return response()->json(['message' => 'Vote gespeichert']);
+    }
+
+    public function destroy($id)
+    {
+        $post = Post::findOrFail($id);
+        $group = Group::findOrFail($post->group_id);
+
+        // Darf löschen: Der Autor des Posts ODER der Ersteller der Gruppe
+        if (auth()->id() === $post->user_id || auth()->id() === $group->user_id) {
+            $post->delete();
+            return response()->json(['message' => 'Post gelöscht']);
+        }
+
+        return response()->json(['message' => 'Nicht erlaubt'], 403);
     }
 }
 </file>
@@ -281,6 +664,31 @@ class StreamController extends Controller
                 'link' => '#'
             ]
         ]);
+    }
+}
+</file>
+
+<file path="app/Http/Controllers/UserController.php">
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+
+class UserController extends Controller
+{
+    public function update(Request $request)
+    {
+        // Validierung
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'semester' => 'required|string|max:50',
+        ]);
+
+        // Update des aktuell eingeloggten Users
+        $request->user()->update($validated);
+
+        return response()->json(['message' => 'Profil aktualisiert!']);
     }
 }
 </file>
@@ -314,7 +722,10 @@ class VideoController extends Controller
         $path = $request->file('video')->store('videos', 'public');
 
         // 3. Datenbank-Eintrag erstellen
+        // NEU: user_id wird jetzt gesetzt (der Upload-Route ist durch
+        // auth:sanctum geschützt, request()->user() ist also immer gesetzt).
         $video = Video::create([
+            'user_id' => $request->user()->id,
             'title' => $request->title,
             'thumbnail_path' => '/storage/' . $path, // Pfad für das Vorschaubild (hier gleich Video-Pfad)
             'file_path' => '/storage/' . $path,      // Pfad zum Video
@@ -322,6 +733,7 @@ class VideoController extends Controller
 
         return response()->json(['message' => 'Video erfolgreich hochgeladen!', 'video' => $video], 201);
     }
+
     // Fügt einem Video einen Kommentar hinzu
     public function addComment(Request $request, $id)
     {
@@ -354,10 +766,10 @@ class Comment extends Model
 
     // Diese Felder dürfen per Massen-Zuweisung (Mass Assignment) gespeichert werden
     protected $fillable = [
-        'user_id',
-        'commentable_type',
-        'commentable_id',
-        'content',
+        'user_id', 
+        'content', 
+        'commentable_id', 
+        'commentable_type'
     ];
 
     /**
@@ -381,6 +793,108 @@ class Comment extends Model
 }
 </file>
 
+<file path="app/Models/Discussion.php">
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+
+class Discussion extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'group_id',
+        'user_id',
+        'title',
+        'content',
+    ];
+
+    /** Die Diskussion gehört zu einer Gruppe */
+    public function group()
+    {
+        return $this->belongsTo(Group::class);
+    }
+
+    /** Die Diskussion hat einen Autor */
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+}
+</file>
+
+<file path="app/Models/Group.php">
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class Group extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'name',
+        'description',
+        'created_by',
+    ];
+
+    /** Wer hat die Gruppe gegründet? */
+    public function creator()
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /** Alle Mitgliedschaften dieser Gruppe */
+    public function members()
+    {
+        return $this->hasMany(GroupMember::class);
+    }
+
+    /** Alle Posts/Diskussionen dieser Gruppe */
+    public function posts()
+    {
+        return $this->hasMany(Post::class);
+    }
+
+    public function discussions()
+    {
+        return $this->hasMany(Discussion::class);
+    }
+}
+</file>
+
+<file path="app/Models/GroupMember.php">
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class GroupMember extends Model
+{
+    protected $fillable = [
+        'group_id',
+        'user_id',
+    ];
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function group()
+    {
+        return $this->belongsTo(Group::class);
+    }
+}
+</file>
+
 <file path="app/Models/Post.php">
 <?php
 
@@ -398,7 +912,7 @@ class Post extends Model
         'title',
         'content',
         'tags',
-        'votes',
+        // 'votes' entfernen wir hier, da wir es dynamisch berechnen
     ];
 
     protected $casts = [
@@ -412,7 +926,19 @@ class Post extends Model
 
     public function comments()
     {
-        return $this->morphMany(Comment::class, 'commentable');
+        return $this->hasMany(Comment::class);
+    }
+
+    public function votes()
+    {
+        return $this->hasMany(Vote::class);
+    }
+
+    // Praktisches Extra: Du kannst jetzt einfach $post->votes_count aufrufen
+    public function getVotesCountAttribute()
+    {
+        // Beispiel: Up-Votes minus Down-Votes
+        return $this->votes()->where('type', 'up')->count() - $this->votes()->where('type', 'down')->count();
     }
 }
 </file>
@@ -443,6 +969,7 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'semester',
     ];
 
     /**
@@ -467,6 +994,10 @@ class User extends Authenticatable
             'password' => 'hashed',
         ];
     }
+    public function posts()
+    {
+        return $this->hasMany(Post::class);
+    }
 }
 </file>
 
@@ -483,6 +1014,16 @@ class Video extends Model
     use HasFactory;
 
     protected $guarded = [];
+}
+</file>
+
+<file path="app/Models/Vote.php">
+<?php
+namespace App\Models;
+use Illuminate\Database\Eloquent\Model;
+
+class Vote extends Model {
+    protected $fillable = ['user_id', 'post_id', 'value'];
 }
 </file>
 
@@ -2225,7 +2766,7 @@ return new class extends Migration
 };
 </file>
 
-<file path="database/migrations/2026_06_30_100000_add_user_id_to_videos_table.php">
+<file path="database/migrations/2026_06_30_000001_add_user_id_to_videos_table.php">
 <?php
 
 use Illuminate\Database\Migrations\Migration;
@@ -2237,8 +2778,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('videos', function (Blueprint $table) {
-            // Wer das Video hochgeladen hat. Nullable, damit alte Einträge ohne Besitzer nicht crashen.
-            $table->foreignId('user_id')->nullable()->after('id')->constrained()->nullOnDelete();
+            $table->foreignId('user_id')->nullable()->after('id')->constrained()->cascadeOnDelete();
         });
     }
 
@@ -2251,7 +2791,35 @@ return new class extends Migration
 };
 </file>
 
-<file path="database/migrations/2026_06_30_100001_create_posts_table.php">
+<file path="database/migrations/2026_06_30_000002_create_comments_table.php">
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('comments', function (Blueprint $table) {
+            $table->id();
+            // Hier muss 'post_id' stehen, damit der Controller es zuordnen kann
+            $table->foreignId('post_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+            $table->text('content');
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('comments');
+    }
+};
+</file>
+
+<file path="database/migrations/2026_06_30_000003_create_posts_table.php">
 <?php
 
 use Illuminate\Database\Migrations\Migration;
@@ -2280,7 +2848,7 @@ return new class extends Migration
 };
 </file>
 
-<file path="database/migrations/2026_06_30_100002_create_comments_table.php">
+<file path="database/migrations/2026_07_01_100000_create_groups_table.php">
 <?php
 
 use Illuminate\Database\Migrations\Migration;
@@ -2291,19 +2859,356 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('comments', function (Blueprint $table) {
+        Schema::create('groups', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
-            // Polymorph: ein Kommentar kann zu einem Video ODER einem Post gehören
-            $table->morphs('commentable'); // erzeugt commentable_id + commentable_type
-            $table->text('content');
+            $table->string('name');
+            $table->text('description')->nullable();
+            $table->foreignId('created_by')->constrained('users')->cascadeOnDelete();
             $table->timestamps();
         });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('comments');
+        Schema::dropIfExists('groups');
+    }
+};
+</file>
+
+<file path="database/migrations/2026_07_01_100001_create_group_members_table.php">
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('group_members', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('group_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+            $table->timestamps();
+
+            // Ein Nutzer kann einer Gruppe nur einmal beitreten
+            $table->unique(['group_id', 'user_id']);
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('group_members');
+    }
+};
+</file>
+
+<file path="database/migrations/2026_07_01_100002_add_group_id_to_posts_table.php">
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::table('posts', function (Blueprint $table) {
+            // Nullable: Posts können zu einer Gruppe gehören oder frei sein
+            $table->foreignId('group_id')->nullable()->after('user_id')->constrained()->nullOnDelete();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::table('posts', function (Blueprint $table) {
+            $table->dropConstrainedForeignId('group_id');
+        });
+    }
+};
+</file>
+
+<file path="database/migrations/2026_07_01_223348_add_semester_to_users_table.php">
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::table('users', function (Blueprint $table) {
+            // Prüfung: Nur hinzufügen, wenn die Spalte noch nicht existiert
+            if (!Schema::hasColumn('users', 'semester')) {
+                $table->string('semester')->nullable()->after('email');
+            }
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::table('users', function (Blueprint $table) {
+            // Gute Praxis: Wenn wir rollen, dann löschen wir die Spalte auch wieder
+            if (Schema::hasColumn('users', 'semester')) {
+                $table->dropColumn('semester');
+            }
+        });
+    }
+};
+</file>
+
+<file path="database/migrations/2026_07_02_002006_create_votes_table.php">
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up()
+    {
+        // Wir prüfen, ob 'posts' schon existiert, um den Absturz zu verhindern
+        if (!Schema::hasTable('posts')) {
+            Schema::create('posts', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('user_id')->constrained();
+                $table->string('title');
+                $table->text('content');
+                $table->json('tags')->nullable();
+                $table->integer('votes')->default(0);
+                $table->timestamps();
+            });
+        }
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        // Korrektur: Wir löschen jetzt 'posts', da wir es oben erstellen
+        Schema::dropIfExists('posts');
+    }
+};
+</file>
+
+<file path="database/migrations/2026_07_02_013323_add_content_to_comments_table.php">
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up()
+    {
+        Schema::table('comments', function (Blueprint $table) {
+            // Nur hinzufügen, wenn die Spalte noch nicht existiert
+            if (!Schema::hasColumn('comments', 'content')) {
+                $table->text('content')->nullable();
+            }
+        });
+    }
+
+    public function down()
+    {
+        Schema::table('comments', function (Blueprint $table) {
+            // Nur löschen, wenn die Spalte existiert
+            if (Schema::hasColumn('comments', 'content')) {
+                $table->dropColumn('content');
+            }
+        });
+    }
+};
+</file>
+
+<file path="database/migrations/2026_07_02_013643_add_polymorphic_columns_to_comments_table.php">
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up()
+    {
+        Schema::table('comments', function (Blueprint $table) {
+            // Prüfung für commentable_id
+            if (!Schema::hasColumn('comments', 'commentable_id')) {
+                $table->unsignedBigInteger('commentable_id')->nullable();
+            }
+            // Prüfung für commentable_type
+            if (!Schema::hasColumn('comments', 'commentable_type')) {
+                $table->string('commentable_type')->nullable();
+            }
+        });
+    }
+
+    public function down()
+    {
+        Schema::table('comments', function (Blueprint $table) {
+            // Nur löschen, wenn sie auch wirklich da sind
+            if (Schema::hasColumn('comments', 'commentable_id')) {
+                $table->dropColumn('commentable_id');
+            }
+            if (Schema::hasColumn('comments', 'commentable_type')) {
+                $table->dropColumn('commentable_type');
+            }
+        });
+    }
+};
+</file>
+
+<file path="database/migrations/2026_07_02_014426_make_video_id_nullable_in_comments_table.php">
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up()
+    {
+        // Wir prüfen zuerst, ob die Tabelle und Spalte überhaupt existieren
+        if (Schema::hasTable('comments') && Schema::hasColumn('comments', 'video_id')) {
+            Schema::table('comments', function (Blueprint $table) {
+                $table->unsignedBigInteger('video_id')->nullable()->change();
+            });
+        }
+    }
+
+    public function down()
+    {
+        // Zum Zurückrollen prüfen wir ebenfalls
+        if (Schema::hasTable('comments') && Schema::hasColumn('comments', 'video_id')) {
+            Schema::table('comments', function (Blueprint $table) {
+                // Hinweis: "nullable(false)" ist gleichbedeutend mit "change()"
+                $table->unsignedBigInteger('video_id')->nullable(false)->change();
+            });
+        }
+    }
+};
+</file>
+
+<file path="database/migrations/2026_07_02_015100_make_old_comment_columns_nullable.php">
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up()
+    {
+        if (Schema::hasTable('comments')) {
+            Schema::table('comments', function (Blueprint $table) {
+                // Nur ändern, wenn die Spalte existiert
+                if (Schema::hasColumn('comments', 'text')) {
+                    $table->text('text')->nullable()->change();
+                }
+                if (Schema::hasColumn('comments', 'video_id')) {
+                    $table->unsignedBigInteger('video_id')->nullable()->change();
+                }
+            });
+        }
+    }
+
+    public function down()
+    {
+        if (Schema::hasTable('comments')) {
+            Schema::table('comments', function (Blueprint $table) {
+                if (Schema::hasColumn('comments', 'text')) {
+                    $table->text('text')->nullable(false)->change();
+                }
+                if (Schema::hasColumn('comments', 'video_id')) {
+                    $table->unsignedBigInteger('video_id')->nullable(false)->change();
+                }
+            });
+        }
+    }
+};
+</file>
+
+<file path="database/migrations/2026_07_02_044054_add_user_id_to_groups_table.php">
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up() 
+    {
+        Schema::table('groups', function (Blueprint $table) {
+            // Prüfung: Nur hinzufügen, wenn die Spalte noch nicht existiert
+            if (!Schema::hasColumn('groups', 'user_id')) {
+                // Wir nutzen 'nullable()', damit existierende Gruppen keinen Fehler verursachen
+                $table->foreignId('user_id')->nullable()->constrained()->onDelete('cascade');
+            }
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::table('groups', function (Blueprint $table) {
+            if (Schema::hasColumn('groups', 'user_id')) {
+                $table->dropForeign(['user_id']); // Erst die Verknüpfung lösen
+                $table->dropColumn('user_id');    // Dann die Spalte löschen
+            }
+        });
+    }
+};
+</file>
+
+<file path="database/migrations/2026_07_02_063446_create_discussions_table.php">
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up()
+    {
+        Schema::create('discussions', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('group_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+            $table->string('title');
+            $table->text('content');
+            $table->timestamps();
+        });
+    }
+
+    public function down()
+    {
+        Schema::dropIfExists('discussions');
     }
 };
 </file>
@@ -2732,30 +3637,40 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\PostController;
 use App\Http\Controllers\StreamController;
 use App\Http\Controllers\CommentController;
+use App\Http\Controllers\UserController;
+use App\Http\Controllers\GroupController;
+use App\Http\Controllers\DiscussionController; // <-- HIER MUSS DAS HIN!
 
 // --- Authentifizierung (Öffentlich) ---
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 
-// --- Öffentlich abrufbar (Auch ohne Login sichtbar) ---
+// --- Öffentlich abrufbar ---
 Route::get('/videos', [VideoController::class, 'index']);
 Route::get('/posts', [PostController::class, 'index']);
 Route::get('/streams', [StreamController::class, 'index']);
-Route::get('/comments', [CommentController::class, 'index']); // Kommentare lesen darf jeder
+Route::get('/posts/{postId}/comments', [CommentController::class, 'index']);
 
-// --- Geschützte Routen (Nur für eingeloggte Nutzer via Sanctum) ---
+// --- Geschützte Routen (Nur für eingeloggte Nutzer) ---
 Route::middleware('auth:sanctum')->group(function () {
-    
-    // Benutzerprofil & eigene Uploads für "Mein Account"
     Route::get('/user/me', [AuthController::class, 'me']);
-    
-    // Neue Inhalte erstellen
+    Route::put('/user/profile', [UserController::class, 'update']);
+
     Route::post('/videos', [VideoController::class, 'store']);
-    Route::post('/posts', [PostController::class, 'store']); // Neue Diskussionen im Backend speichern
+    Route::post('/posts', [PostController::class, 'store']);
     
-    // Neuen Kommentar schreiben (für Video oder Post)
-    Route::post('/comments', [CommentController::class, 'store']);
-    
+    // GRUPPEN ROUTEN
+    Route::post('/groups', [GroupController::class, 'store']);
+    Route::delete('/groups/{group}', [GroupController::class, 'destroy']);
+
+    Route::post('/posts/{postId}/comments', [CommentController::class, 'store']);
+    Route::post('/posts/{post}/vote', [PostController::class, 'vote']);
+    Route::delete('/posts/{post}', [PostController::class, 'destroy']);
+
+    // DISKUSSION ROUTE
+    // Middleware ist hier nicht mehr nötig, da sie vom Gruppen-Block oben "geerbt" wird
+    Route::post('/groups/{groupId}/discussions', [DiscussionController::class, 'store']);
+    Route::get('/groups/{groupId}/discussions', [DiscussionController::class, 'index']);
 });
 </file>
 
